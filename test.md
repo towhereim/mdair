@@ -1,4 +1,4 @@
-# AssiMD Test Document
+# mdair Test Document
 
 ## Features
 
@@ -8,7 +8,7 @@ This is a **bold** text, *italic* text, and `inline code`.
 
 ```python
 def hello():
-    print("Hello, AssiMD!")
+    print("Hello, mdair!")
 ```
 
 ### List
@@ -28,7 +28,7 @@ def hello():
 
 | Name | Type | Description |
 |------|------|-------------|
-| AssiMD | QuickLook | Markdown previewer |
+| mdair | QuickLook | Markdown previewer |
 | macOS | OS | Apple's desktop OS |
 
 ### Blockquote

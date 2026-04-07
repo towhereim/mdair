@@ -22,6 +22,13 @@
 
 ---
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mdair-preview-dark.png">
+    <img src="docs/assets/mdair-preview.png" alt="mdair preview" width="700">
+  </picture>
+</p>
+
 **mdair** is a lightweight macOS app that brings native QuickLook preview to Markdown files. Just press `Space` on any `.md` file in Finder to see a beautifully rendered preview — no extra app needed.
 
 ## Features

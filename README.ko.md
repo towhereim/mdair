@@ -22,6 +22,13 @@
 
 ---
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mdair-preview-dark.png">
+    <img src="docs/assets/mdair-preview.png" alt="mdair 미리보기" width="700">
+  </picture>
+</p>
+
 **mdair**는 macOS에서 마크다운 파일의 네이티브 QuickLook 미리보기를 제공하는 경량 앱입니다. Finder에서 `.md` 파일을 선택하고 `Space`만 누르면 아름답게 렌더링된 미리보기를 바로 볼 수 있습니다.
 
 ## 기능
