@@ -10,6 +10,7 @@ struct MarkdownRenderer {
         var output: [String] = []
         var inCodeBlock = false
         var codeBlockContent: [String] = []
+        var codeBlockLang = ""
         var inList = false
         var inOrderedList = false
         var inBlockquote = false
@@ -22,13 +23,20 @@ struct MarkdownRenderer {
             if trimmed.hasPrefix("```") {
                 if inCodeBlock {
                     let code = codeBlockContent.joined(separator: "\n")
-                        .replacingOccurrences(of: "&", with: "&amp;")
-                        .replacingOccurrences(of: "<", with: "&lt;")
-                        .replacingOccurrences(of: ">", with: "&gt;")
-                    output.append("<pre><code>\(code)</code></pre>")
+                    if codeBlockLang == "mermaid" {
+                        output.append("<pre class=\"mermaid\">\(code)</pre>")
+                    } else {
+                        let escaped = code
+                            .replacingOccurrences(of: "&", with: "&amp;")
+                            .replacingOccurrences(of: "<", with: "&lt;")
+                            .replacingOccurrences(of: ">", with: "&gt;")
+                        output.append("<pre><code>\(escaped)</code></pre>")
+                    }
                     codeBlockContent = []
+                    codeBlockLang = ""
                     inCodeBlock = false
                 } else {
+                    codeBlockLang = String(trimmed.dropFirst(3))
                     inCodeBlock = true
                 }
                 continue
@@ -129,10 +137,15 @@ struct MarkdownRenderer {
         if inTable { output.append("</table>") }
         if inCodeBlock {
             let code = codeBlockContent.joined(separator: "\n")
-                .replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
-            output.append("<pre><code>\(code)</code></pre>")
+            if codeBlockLang == "mermaid" {
+                output.append("<pre class=\"mermaid\">\(code)</pre>")
+            } else {
+                let escaped = code
+                    .replacingOccurrences(of: "&", with: "&amp;")
+                    .replacingOccurrences(of: "<", with: "&lt;")
+                    .replacingOccurrences(of: ">", with: "&gt;")
+                output.append("<pre><code>\(escaped)</code></pre>")
+            }
         }
 
         var html = output.joined(separator: "\n")
@@ -227,7 +240,7 @@ class PreviewViewController: NSViewController, QLPreviewingController {
         let markdown = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
         let renderer = MarkdownRenderer()
         let body = renderer.render(markdown)
-        let html = "<!DOCTYPE html><html><head><meta charset='utf-8'><style>\(previewCSS)</style></head><body>\(body)</body></html>"
+        let html = "<!DOCTYPE html><html><head><meta charset='utf-8'><style>\(previewCSS)</style></head><body>\(body)<script src='https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'></script><script>mermaid.initialize({startOnLoad:true,theme:'default'});</script></body></html>"
         await MainActor.run {
             webView.loadHTMLString(html, baseURL: url.deletingLastPathComponent())
         }

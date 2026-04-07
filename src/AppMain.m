@@ -8,7 +8,7 @@ extern NSString *getCSS(void);
 // ---------------------------------------------------------------------------
 // App Delegate
 // ---------------------------------------------------------------------------
-@interface MdairAppDelegate : NSObject <NSApplicationDelegate>
+@interface MdairAppDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate>
 @property (strong) NSMutableArray<NSWindow *> *windows;
 @end
 
@@ -67,7 +67,10 @@ extern NSString *getCSS(void);
     NSString *css = getCSS();
     NSString *html = [NSString stringWithFormat:
         @"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-        "<style>%@</style></head><body>%@</body></html>", css, body];
+        "<style>%@</style></head><body>%@"
+        "<script src='https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'></script>"
+        "<script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>"
+        "</body></html>", css, body];
 
     NSRect frame = NSMakeRect(0, 0, 860, 700);
     NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -81,11 +84,22 @@ extern NSString *getCSS(void);
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     WKWebView *webView = [[WKWebView alloc] initWithFrame:frame configuration:config];
+    [webView setNavigationDelegate:self];
     [webView loadHTMLString:html baseURL:nil];
     [window setContentView:webView];
     [window makeKeyAndOrderFront:nil];
 
     [self.windows addObject:window];
+}
+
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    NSURL *url = navigationAction.request.URL;
+    if (navigationAction.navigationType == WKNavigationTypeLinkActivated && url) {
+        [[NSWorkspace sharedWorkspace] openURL:url];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    decisionHandler(WKNavigationActionPolicyAllow);
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {

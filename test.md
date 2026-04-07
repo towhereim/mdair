@@ -43,3 +43,14 @@ def hello():
 [Visit GitHub](https://github.com)
 
 That's it! ~~deleted text~~ and ***bold italic***.
+
+### Mermaid Diagram
+
+```mermaid
+graph TD
+    A[Markdown File] --> B[mdair]
+    B --> C[QuickLook Preview]
+    B --> D[Standalone Viewer]
+    C --> E[Finder Spacebar]
+    D --> F[Double Click]
+```

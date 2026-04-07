@@ -4,6 +4,7 @@
 // Simple Markdown to HTML converter
 NSString *markdownToHTML(NSString *markdown) {
     NSMutableString *html = [markdown mutableCopy];
+    NSMutableArray *mermaidBlocks = [NSMutableArray array];
 
     // Fenced code blocks (``` ... ```) — must be processed before inline patterns
     {
@@ -12,12 +13,20 @@ NSString *markdownToHTML(NSString *markdown) {
         NSArray *matches = [regex matchesInString:html options:0 range:NSMakeRange(0, html.length)];
         // Process in reverse to maintain ranges
         for (NSTextCheckingResult *match in [matches reverseObjectEnumerator]) {
+            NSString *lang = [html substringWithRange:[match rangeAtIndex:1]];
             NSString *code = [html substringWithRange:[match rangeAtIndex:2]];
-            // Escape HTML entities in code
-            code = [code stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
-            code = [code stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
-            code = [code stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
-            NSString *replacement = [NSString stringWithFormat:@"<pre><code>%@</code></pre>", code];
+            NSString *replacement;
+            if ([lang isEqualToString:@"mermaid"]) {
+                NSString *placeholder = [NSString stringWithFormat:@"<!--MERMAID_%lu-->", (unsigned long)mermaidBlocks.count];
+                [mermaidBlocks addObject:code];
+                replacement = placeholder;
+            } else {
+                // Escape HTML entities in code
+                code = [code stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
+                code = [code stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+                code = [code stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
+                replacement = [NSString stringWithFormat:@"<pre><code>%@</code></pre>", code];
+            }
             [html replaceCharactersInRange:[match range] withString:replacement];
         }
     }
@@ -222,6 +231,21 @@ NSString *markdownToHTML(NSString *markdown) {
         [r replaceMatchesInString:html options:0 range:NSMakeRange(0, html.length) withTemplate:@"<img src=\"$2\" alt=\"$1\" style=\"max-width:100%;\">"];
     }
 
+    // Restore mermaid blocks after inline formatting
+    for (NSUInteger i = 0; i < mermaidBlocks.count; i++) {
+        NSString *replacement = [NSString stringWithFormat:@"<pre class=\"mermaid\">%@</pre>", mermaidBlocks[i]];
+        // Try all possible wrapped forms
+        NSArray *patterns = @[
+            [NSString stringWithFormat:@"<p><!--MERMAID_%lu--></p>", (unsigned long)i],
+            [NSString stringWithFormat:@"<!--MERMAID_%lu-->", (unsigned long)i],
+            [NSString stringWithFormat:@"<p>&lt;!--MERMAID_%lu--&gt;</p>", (unsigned long)i],
+            [NSString stringWithFormat:@"&lt;!--MERMAID_%lu--&gt;", (unsigned long)i],
+        ];
+        for (NSString *placeholder in patterns) {
+            [html replaceOccurrencesOfString:placeholder withString:replacement options:0 range:NSMakeRange(0, html.length)];
+        }
+    }
+
     return [html copy];
 }
 
@@ -321,7 +345,10 @@ OSStatus GeneratePreviewForURL(void *thisInterface, QLPreviewRequestRef preview,
             "<meta name='viewport' content='width=device-width, initial-scale=1'>"
             "<style>%@</style>"
             "</head>"
-            "<body>%@</body>"
+            "<body>%@"
+            "<script src='https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'></script>"
+            "<script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>"
+            "</body>"
             "</html>", css, body];
 
         // Return HTML to QuickLook
