@@ -1,3 +1,7 @@
+<p align="right">
+  <strong>English</strong> · <a href="README.ko.md">Korean</a>
+</p>
+
 # mdair — Markdown Air Previewer
 
 <p align="center">
