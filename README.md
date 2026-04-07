@@ -51,6 +51,13 @@ Grab the latest release from the [Releases](https://github.com/tykimos/mdair/rel
 - **`mdair.pkg`** — Double-click to install (recommended)
 - **`mdair.dmg`** — Open and run the PKG installer inside
 
+### Bypassing Gatekeeper
+
+Since mdair is not signed with an Apple Developer ID, macOS may block the installer. To open it:
+
+1. **Right-click** `mdair.pkg` → select **Open** → click **Open** in the dialog
+2. Or go to **System Settings → Privacy & Security** → click **Open Anyway**
+
 ### After Installation
 
 The QuickLook extension activates automatically. Navigate to any `.md` file in Finder and press `Space` to preview.
