@@ -1,6 +1,8 @@
 build/
 dist/
 .DS_Store
+.claude/
+.omc/
 *.swp
 *.swo
 *~
