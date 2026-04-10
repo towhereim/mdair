@@ -41,15 +41,14 @@ mkdir -p "$EXT_BUNDLE/Contents/MacOS"
 
 cp "$PROJECT_ROOT/ExtInfo.plist" "$EXT_BUNDLE/Contents/Info.plist"
 
-# Compile Swift extension as appex (plugin bundle)
+# Compile Swift extension as appex executable with NSExtensionMain entry point
 swiftc \
     -target arm64-apple-macosx13.0 \
-    -emit-library \
     -module-name QLMarkdownPreview \
     -o "$EXT_BUNDLE/Contents/MacOS/QLMarkdownPreview" \
-    -Xlinker -bundle \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -Xlinker -rpath -Xlinker @executable_path/../../../../Frameworks \
+    -Xlinker -e -Xlinker _NSExtensionMain \
     -import-objc-header /dev/null \
     "$PROJECT_ROOT/src/PreviewExtension.swift" \
     2>&1
@@ -58,8 +57,8 @@ echo "  ✓ QLMarkdownPreview.appex"
 
 # --- 3. Code Sign ---
 echo "[3/4] Code signing..."
-codesign --force --deep --sign - "$EXT_BUNDLE" 2>&1
-codesign --force --deep --sign - "$APP_BUNDLE" 2>&1
+codesign --force --sign - --entitlements "$PROJECT_ROOT/ExtEntitlements.plist" "$EXT_BUNDLE" 2>&1
+codesign --force --sign - "$APP_BUNDLE" 2>&1
 echo "  ✓ Signed (ad-hoc)"
 
 # --- 4. Verify ---

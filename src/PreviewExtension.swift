@@ -126,6 +126,12 @@ struct MarkdownRenderer {
                 continue
             }
 
+            // HTML passthrough — lines starting with < are kept as-is
+            if trimmed.hasPrefix("<") {
+                output.append(line)
+                continue
+            }
+
             // Paragraph
             output.append("<p>\(trimmed)</p>")
         }
@@ -177,72 +183,119 @@ struct MarkdownRenderer {
     }
 }
 
-// MARK: - CSS
-
-let previewCSS = """
-* { margin: 0; padding: 0; box-sizing: border-box; }
-:root { color-scheme: light dark; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
-  max-width: 820px; margin: 0 auto; padding: 24px 40px; line-height: 1.7; font-size: 15px;
-}
-h1 { font-size: 2em; margin: 0.8em 0 0.4em; padding-bottom: 0.3em; border-bottom: 1px solid; }
-h2 { font-size: 1.5em; margin: 0.8em 0 0.4em; padding-bottom: 0.2em; border-bottom: 1px solid; }
-h3 { font-size: 1.25em; margin: 0.8em 0 0.4em; }
-h4 { font-size: 1.1em; margin: 0.6em 0 0.3em; }
-h5, h6 { font-size: 1em; margin: 0.6em 0 0.3em; }
-p { margin: 0.6em 0; }
-pre { padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; margin: 1em 0; }
-code { font-family: 'SF Mono', Menlo, monospace; font-size: 0.9em; padding: 2px 6px; border-radius: 4px; }
-pre code { padding: 0; font-size: inherit; }
-blockquote { padding: 8px 16px; margin: 1em 0; border-left: 4px solid; border-radius: 2px; }
-ul, ol { padding-left: 2em; margin: 0.5em 0; }
-li { margin: 0.25em 0; }
-table { border-collapse: collapse; margin: 1em 0; width: 100%; }
-th, td { padding: 8px 12px; border: 1px solid; text-align: left; }
-th { font-weight: 600; }
-hr { border: none; height: 1px; margin: 2em 0; }
-img { max-width: 100%; border-radius: 4px; margin: 0.5em 0; }
-a { text-decoration: none; }
-a:hover { text-decoration: underline; }
-input[type=checkbox] { margin-right: 6px; }
-@media (prefers-color-scheme: light) {
-  body { color: #24292f; background: #fff; }
-  h1, h2 { border-bottom-color: #d1d9e0; }
-  code { background: #eff1f3; } pre { background: #f6f8fa; }
-  blockquote { border-left-color: #d1d9e0; color: #59636e; background: #f6f8fa; }
-  th { background: #f6f8fa; } th, td { border-color: #d1d9e0; }
-  hr { background: #d1d9e0; } a { color: #0969da; }
-}
-@media (prefers-color-scheme: dark) {
-  body { color: #e6edf3; background: #0d1117; }
-  h1, h2 { border-bottom-color: #30363d; }
-  code { background: #262c36; } pre { background: #161b22; }
-  blockquote { border-left-color: #30363d; color: #8b949e; background: #161b22; }
-  th { background: #161b22; } th, td { border-color: #30363d; }
-  hr { background: #30363d; } a { color: #58a6ff; }
-}
-"""
-
 // MARK: - QLPreviewingController
 
-class PreviewViewController: NSViewController, QLPreviewingController {
+class PreviewViewController: NSViewController, QLPreviewingController, WKNavigationDelegate {
     var webView: WKWebView!
+    private var loadContinuation: CheckedContinuation<Void, Never>?
+
+    static let css = """
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      max-width: 820px; margin: 0 auto; padding: 24px 40px; line-height: 1.7; font-size: 15px;
+    }
+    h1 { font-size: 2em; margin: 0.8em 0 0.4em; padding-bottom: 0.3em; border-bottom: 1px solid; }
+    h2 { font-size: 1.5em; margin: 0.8em 0 0.4em; padding-bottom: 0.2em; border-bottom: 1px solid; }
+    h3 { font-size: 1.25em; margin: 0.8em 0 0.4em; }
+    h4 { font-size: 1.1em; margin: 0.6em 0 0.3em; }
+    h5, h6 { font-size: 1em; margin: 0.6em 0 0.3em; }
+    p { margin: 0.6em 0; }
+    pre { padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; margin: 1em 0; }
+    code { font-family: 'SF Mono', Menlo, monospace; font-size: 0.9em; padding: 2px 6px; border-radius: 4px; }
+    pre code { padding: 0; font-size: inherit; }
+    blockquote { padding: 8px 16px; margin: 1em 0; border-left: 4px solid; border-radius: 2px; }
+    ul, ol { padding-left: 2em; margin: 0.5em 0; }
+    li { margin: 0.25em 0; }
+    table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+    th, td { padding: 8px 12px; border: 1px solid; text-align: left; }
+    th { font-weight: 600; }
+    hr { border: none; height: 1px; margin: 2em 0; }
+    img { max-width: 100%; border-radius: 4px; margin: 0.5em 0; }
+    a { text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    input[type=checkbox] { margin-right: 6px; }
+    @media (prefers-color-scheme: light) {
+      body { color: #24292f; background: #fff; }
+      h1, h2 { border-bottom-color: #d1d9e0; }
+      code { background: #eff1f3; } pre { background: #f6f8fa; }
+      blockquote { border-left-color: #d1d9e0; color: #59636e; background: #f6f8fa; }
+      th { background: #f6f8fa; } th, td { border-color: #d1d9e0; }
+      hr { background: #d1d9e0; } a { color: #0969da; }
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e6edf3; background: #0d1117; }
+      h1, h2 { border-bottom-color: #30363d; }
+      code { background: #262c36; } pre { background: #161b22; }
+      blockquote { border-left-color: #30363d; color: #8b949e; background: #161b22; }
+      th { background: #161b22; } th, td { border-color: #30363d; }
+      hr { background: #30363d; } a { color: #58a6ff; }
+    }
+    """
 
     override func loadView() {
         let config = WKWebViewConfiguration()
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+        webView.navigationDelegate = self
         self.view = webView
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loadContinuation?.resume()
+        loadContinuation = nil
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        loadContinuation?.resume()
+        loadContinuation = nil
     }
 
     func preparePreviewOfFile(at url: URL) async throws {
         let data = try Data(contentsOf: url)
         let markdown = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
         let renderer = MarkdownRenderer()
-        let body = renderer.render(markdown)
-        let html = "<!DOCTYPE html><html><head><meta charset='utf-8'><style>\(previewCSS)</style></head><body>\(body)<script src='https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'></script><script>mermaid.initialize({startOnLoad:true,theme:'default'});</script></body></html>"
-        await MainActor.run {
-            webView.loadHTMLString(html, baseURL: url.deletingLastPathComponent())
+        var body = renderer.render(markdown)
+        let baseDir = url.deletingLastPathComponent()
+        body = inlineLocalImages(body, baseDir: baseDir)
+        let html = """
+        <!DOCTYPE html><html><head><meta charset='utf-8'>\
+        <style>\(PreviewViewController.css)</style></head>\
+        <body>\(body)\
+        <script src='https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'></script>\
+        <script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>\
+        </body></html>
+        """
+        await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                self.loadContinuation = continuation
+                self.webView.loadHTMLString(html, baseURL: baseDir)
+            }
         }
+    }
+
+    private func inlineLocalImages(_ html: String, baseDir: URL) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(src|srcset)=\"([^\"]+)\""#, options: []
+        ) else { return html }
+        var result = html
+        let matches = regex.matches(in: html, options: [], range: NSRange(html.startIndex..., in: html))
+        for match in matches.reversed() {
+            guard let attrRange = Range(match.range(at: 1), in: html),
+                  let pathRange = Range(match.range(at: 2), in: html) else { continue }
+            let attr = String(html[attrRange])
+            let path = String(html[pathRange])
+            if path.hasPrefix("http://") || path.hasPrefix("https://") || path.hasPrefix("data:") { continue }
+            let fileURL = baseDir.appendingPathComponent(path)
+            guard let imgData = try? Data(contentsOf: fileURL) else { continue }
+            let ext = fileURL.pathExtension.lowercased()
+            let mime = ext == "png" ? "image/png" : ext == "jpg" || ext == "jpeg" ? "image/jpeg" : ext == "gif" ? "image/gif" : ext == "svg" ? "image/svg+xml" : "image/png"
+            let b64 = imgData.base64EncodedString()
+            let dataURI = "data:\(mime);base64,\(b64)"
+            let fullRange = match.range(at: 0)
+            guard let swiftRange = Range(fullRange, in: result) else { continue }
+            result.replaceSubrange(swiftRange, with: "\(attr)=\"\(dataURI)\"")
+        }
+        return result
     }
 }
