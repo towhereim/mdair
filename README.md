@@ -62,6 +62,47 @@ Since mdair is not signed with an Apple Developer ID, macOS may block the instal
 
 The QuickLook extension activates automatically. Navigate to any `.md` file in Finder and press `Space` to preview.
 
+### macOS Configuration
+
+#### Enable Single-Click QuickLook (Finder Settings)
+
+By default, you need to press `Space` to trigger QuickLook. To show previews automatically when selecting a file:
+
+1. Open **Finder** → **Settings** (or press `⌘,`)
+2. Go to the **General** tab
+3. Check **"Show preview in Quick Look"** (available on macOS Ventura and later)
+
+Alternatively, enable it via Terminal:
+
+```bash
+defaults write com.apple.finder QLEnableTextSelection -bool true
+defaults write com.apple.finder QLInlinePreviewMinimumSupportedSize -int 0
+killall Finder
+```
+
+#### Set mdair as the Default App for `.md` Files
+
+To open all Markdown files with mdair by default:
+
+1. **Right-click** any `.md` file in Finder
+2. Select **Get Info** (or press `⌘I`)
+3. Under **Open with**, select **mdair** from the dropdown
+4. Click **Change All...** → confirm with **Continue**
+
+This makes mdair the default viewer for all `.md` files.
+
+#### Verify QuickLook Extension is Active
+
+If QuickLook preview doesn't work after installation:
+
+1. Go to **System Settings → Extensions → Quick Look**
+2. Make sure **QLMarkdownPreview** is checked
+3. If it doesn't appear, try restarting Finder:
+
+```bash
+killall Finder
+```
+
 ## Build from Source
 
 Requires Xcode Command Line Tools on macOS 13.0+.
