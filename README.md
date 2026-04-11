@@ -41,6 +41,13 @@
 | **Rich Markdown** | Headings, lists, tables, code blocks, blockquotes, checkboxes, images, links |
 | **Zero Dependencies** | Pure native macOS — no Electron, no Node.js, no frameworks |
 | **Tiny Footprint** | Under 200KB installed |
+| **Zoom** | Zoom in/out with `⌘+`/`⌘-` or trackpad pinch gestures |
+
+### Zoom In / Out
+
+<p align="center">
+  <img src="docs/assets/mdair-zoom.gif" alt="Zoom in/out demo" width="700">
+</p>
 
 ## Installation
 
