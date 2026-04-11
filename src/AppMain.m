@@ -10,6 +10,9 @@ extern NSString *getCSS(void);
 // ---------------------------------------------------------------------------
 @interface MdairAppDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate>
 @property (strong) NSMutableArray<NSWindow *> *windows;
+- (IBAction)zoomIn:(id)sender;
+- (IBAction)zoomOut:(id)sender;
+- (IBAction)actualSize:(id)sender;
 @end
 
 @implementation MdairAppDelegate
@@ -84,6 +87,7 @@ extern NSString *getCSS(void);
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     WKWebView *webView = [[WKWebView alloc] initWithFrame:frame configuration:config];
+    [webView setAllowsMagnification:YES];
     [webView setNavigationDelegate:self];
     [webView loadHTMLString:html baseURL:nil];
     [window setContentView:webView];
@@ -100,6 +104,35 @@ extern NSString *getCSS(void);
         return;
     }
     decisionHandler(WKNavigationActionPolicyAllow);
+}
+
+- (WKWebView *)activeWebView {
+    NSWindow *window = [NSApp keyWindow];
+    if (window && [window.contentView isKindOfClass:[WKWebView class]]) {
+        return (WKWebView *)window.contentView;
+    }
+    return nil;
+}
+
+- (IBAction)zoomIn:(id)sender {
+    WKWebView *webView = [self activeWebView];
+    if (webView) {
+        webView.magnification = MIN(webView.magnification * 1.25, 5.0);
+    }
+}
+
+- (IBAction)zoomOut:(id)sender {
+    WKWebView *webView = [self activeWebView];
+    if (webView) {
+        webView.magnification = MAX(webView.magnification / 1.25, 0.25);
+    }
+}
+
+- (IBAction)actualSize:(id)sender {
+    WKWebView *webView = [self activeWebView];
+    if (webView) {
+        webView.magnification = 1.0;
+    }
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
@@ -131,6 +164,14 @@ int main(int argc, const char *argv[]) {
         NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
         [fileMenu addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
         [fileMenuItem setSubmenu:fileMenu];
+
+        NSMenuItem *viewMenuItem = [[NSMenuItem alloc] init];
+        [menuBar addItem:viewMenuItem];
+        NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
+        [viewMenu addItemWithTitle:@"Zoom In" action:@selector(zoomIn:) keyEquivalent:@"+"];
+        [viewMenu addItemWithTitle:@"Zoom Out" action:@selector(zoomOut:) keyEquivalent:@"-"];
+        [viewMenu addItemWithTitle:@"Actual Size" action:@selector(actualSize:) keyEquivalent:@"0"];
+        [viewMenuItem setSubmenu:viewMenu];
 
         [app setMainMenu:menuBar];
 

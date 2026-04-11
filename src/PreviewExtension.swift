@@ -237,6 +237,7 @@ class PreviewViewController: NSViewController, QLPreviewingController, WKNavigat
     override func loadView() {
         let config = WKWebViewConfiguration()
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+        webView.allowsMagnification = true
         webView.navigationDelegate = self
         self.view = webView
     }
