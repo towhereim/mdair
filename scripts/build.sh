@@ -11,7 +11,7 @@ echo "=== mdair Build ==="
 rm -rf "$APP_BUNDLE"
 
 # --- 1. Build App ---
-echo "[1/4] Building mdair.app..."
+echo "[1/5] Building mdair.app..."
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
@@ -36,7 +36,7 @@ clang \
 echo "  ✓ mdair.app"
 
 # --- 2. Build QuickLook Preview Extension ---
-echo "[2/4] Building QLMarkdownPreview.appex..."
+echo "[2/5] Building QLMarkdownPreview.appex..."
 mkdir -p "$EXT_BUNDLE/Contents/MacOS"
 
 cp "$PROJECT_ROOT/ExtInfo.plist" "$EXT_BUNDLE/Contents/Info.plist"
@@ -55,18 +55,31 @@ swiftc \
 
 echo "  ✓ QLMarkdownPreview.appex"
 
+# --- 2b. Build MdairConverter CLI tool ---
+echo "[2b/5] Building mdair-convert..."
+swiftc \
+    -target arm64-apple-macosx13.0 \
+    -module-name MdairConverter \
+    -o "$APP_BUNDLE/Contents/MacOS/mdair-convert" \
+    -import-objc-header /dev/null \
+    "$PROJECT_ROOT/src/MdairConverter.swift" \
+    2>&1
+
+echo "  ✓ mdair-convert"
+
 # --- 3. Code Sign ---
-echo "[3/4] Code signing..."
+echo "[3/5] Code signing..."
 codesign --force --sign - --entitlements "$PROJECT_ROOT/ExtEntitlements.plist" "$EXT_BUNDLE" 2>&1
 codesign --force --sign - "$APP_BUNDLE" 2>&1
 echo "  ✓ Signed (ad-hoc)"
 
 # --- 4. Verify ---
-echo "[4/4] Verifying..."
+echo "[4/5] Verifying..."
 FAIL=0
 [ -f "$APP_BUNDLE/Contents/MacOS/mdair" ] || { echo "  ✗ App binary missing"; FAIL=1; }
 [ -f "$EXT_BUNDLE/Contents/MacOS/QLMarkdownPreview" ] || { echo "  ✗ Extension binary missing"; FAIL=1; }
 [ -f "$EXT_BUNDLE/Contents/Info.plist" ] || { echo "  ✗ Extension Info.plist missing"; FAIL=1; }
+[ -f "$APP_BUNDLE/Contents/MacOS/mdair-convert" ] || { echo "  ✗ mdair-convert binary missing"; FAIL=1; }
 
 if [ "$FAIL" -eq 0 ]; then
     echo "  ✓ All verified"
@@ -78,4 +91,5 @@ fi
 echo ""
 echo "=== Build complete ==="
 echo "  $APP_BUNDLE"
+echo "  ├── Contents/MacOS/mdair-convert"
 echo "  └── Contents/PlugIns/QLMarkdownPreview.appex"

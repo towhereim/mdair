@@ -15,7 +15,7 @@
     <key>CFBundleDisplayName</key>
     <string>mdair</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundlePackageType</key>
@@ -56,6 +56,45 @@
                 <string>mdtext</string>
                 <string>txt</string>
             </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>mdair Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.mdair.document</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>mdair</string>
+            </array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.mdair.document</string>
+            <key>UTTypeDescription</key>
+            <string>mdair Document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.composite-content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>mdair</string>
+                </array>
+                <key>public.mime-type</key>
+                <string>application/x-mdair</string>
+            </dict>
         </dict>
     </array>
     <key>UTImportedTypeDeclarations</key>

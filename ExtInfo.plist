@@ -13,7 +13,7 @@
     <key>CFBundleName</key>
     <string>QLMarkdownPreview</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundlePackageType</key>
@@ -28,6 +28,7 @@
             <array>
                 <string>net.daringfireball.markdown</string>
                 <string>public.plain-text</string>
+                <string>com.mdair.document</string>
             </array>
             <key>QLSupportsSearchableItems</key>
             <true/>

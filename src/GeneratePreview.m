@@ -281,6 +281,17 @@ NSString *getCSS(void) {
     "a { text-decoration: none; }"
     "a:hover { text-decoration: underline; }"
     "input[type=checkbox] { margin-right: 6px; }"
+    "#mdair-toast {"
+    "  position: fixed; top: 16px; right: 16px;"
+    "  padding: 6px 14px; border-radius: 6px;"
+    "  font-size: 13px; font-weight: 500;"
+    "  background: rgba(40,40,40,0.92); color: #fff;"
+    "  opacity: 0; pointer-events: none;"
+    "  transform: translateY(-8px);"
+    "  transition: opacity 0.18s ease, transform 0.18s ease;"
+    "  z-index: 99999;"
+    "}"
+    "#mdair-toast.show { opacity: 1; transform: translateY(0); }"
 
     // Light theme
     "@media (prefers-color-scheme: light) {"

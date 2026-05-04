@@ -1,6 +1,159 @@
 import Cocoa
 import Quartz
 import WebKit
+import Compression
+
+// MARK: - ZIP Parser (Pure Foundation, Sandbox-Safe)
+
+struct ZipEntry {
+    let filename: String
+    let uncompressedSize: UInt32
+    let data: Data
+}
+
+struct ZipReader {
+    enum ZipError: Error {
+        case invalidArchive
+        case unsupportedCompression
+        case decompressionFailed
+        case pathTraversal
+    }
+
+    static func readEntries(from fileURL: URL) throws -> [ZipEntry] {
+        let data = try Data(contentsOf: fileURL)
+        var entries: [ZipEntry] = []
+        var offset = 0
+
+        while offset + 30 <= data.count {
+            let sig = data.subdata(in: offset..<offset+4)
+            // Local file header signature: 0x04034b50
+            guard sig == Data([0x50, 0x4b, 0x03, 0x04]) else { break }
+
+            let compressionMethod = data.readUInt16(at: offset + 8)
+            let compressedSize = data.readUInt32(at: offset + 18)
+            let uncompressedSize = data.readUInt32(at: offset + 22)
+            let filenameLen = data.readUInt16(at: offset + 26)
+            let extraLen = data.readUInt16(at: offset + 28)
+
+            let filenameStart = offset + 30
+            let filenameEnd = filenameStart + Int(filenameLen)
+            guard filenameEnd <= data.count else { break }
+
+            let filenameData = data.subdata(in: filenameStart..<filenameEnd)
+            let filename = String(data: filenameData, encoding: .utf8) ?? ""
+
+            let dataStart = filenameEnd + Int(extraLen)
+            let dataEnd = dataStart + Int(compressedSize)
+            guard dataEnd <= data.count else { break }
+
+            // Path traversal protection
+            let normalizedPath = filename.replacingOccurrences(of: "\\", with: "/")
+            if normalizedPath.contains("..") {
+                offset = dataEnd
+                continue
+            }
+
+            // Skip directories
+            if filename.hasSuffix("/") {
+                offset = dataEnd
+                continue
+            }
+
+            let compressedData = data.subdata(in: dataStart..<dataEnd)
+
+            let fileData: Data
+            if compressionMethod == 0 {
+                // Stored (no compression)
+                fileData = compressedData
+            } else if compressionMethod == 8 {
+                // Deflate
+                guard let decompressed = Self.inflate(compressedData, uncompressedSize: Int(uncompressedSize)) else {
+                    offset = dataEnd
+                    continue
+                }
+                fileData = decompressed
+            } else {
+                offset = dataEnd
+                continue
+            }
+
+            entries.append(ZipEntry(filename: filename, uncompressedSize: uncompressedSize, data: fileData))
+            offset = dataEnd
+        }
+
+        return entries
+    }
+
+    private static func inflate(_ data: Data, uncompressedSize: Int) -> Data? {
+        guard uncompressedSize > 0 else { return Data() }
+        let destSize = max(uncompressedSize, 256)
+        var destBuffer = [UInt8](repeating: 0, count: destSize)
+
+        let result = data.withUnsafeBytes { srcPtr -> Int in
+            guard let srcBase = srcPtr.baseAddress else { return 0 }
+            return compression_decode_buffer(
+                &destBuffer, destSize,
+                srcBase.assumingMemoryBound(to: UInt8.self), data.count,
+                nil,
+                COMPRESSION_ZLIB
+            )
+        }
+
+        guard result > 0 else { return nil }
+        return Data(destBuffer.prefix(result))
+    }
+}
+
+private extension Data {
+    func readUInt16(at offset: Int) -> UInt16 {
+        guard offset + 2 <= count else { return 0 }
+        return subdata(in: offset..<offset+2).withUnsafeBytes { $0.load(as: UInt16.self) }
+    }
+
+    func readUInt32(at offset: Int) -> UInt32 {
+        guard offset + 4 <= count else { return 0 }
+        return subdata(in: offset..<offset+4).withUnsafeBytes { $0.load(as: UInt32.self) }
+    }
+}
+
+// MARK: - MdairParser
+
+struct MdairParser {
+    struct MdairDocument {
+        let markdown: String
+        let assets: [String: Data]  // filename -> image data
+    }
+
+    func parse(fileURL: URL) throws -> MdairDocument {
+        let entries = try ZipReader.readEntries(from: fileURL)
+
+        // Find content.md
+        var markdownData: Data?
+        if let contentEntry = entries.first(where: { $0.filename == "content.md" }) {
+            markdownData = contentEntry.data
+        } else if let firstMd = entries.first(where: { $0.filename.hasSuffix(".md") && !$0.filename.contains("/") }) {
+            markdownData = firstMd.data
+        }
+
+        let markdown: String
+        if let md = markdownData {
+            markdown = String(data: md, encoding: .utf8) ?? String(data: md, encoding: .isoLatin1) ?? ""
+        } else {
+            markdown = ""
+        }
+
+        // Collect assets
+        var assets: [String: Data] = [:]
+        for entry in entries {
+            if entry.filename.hasPrefix("assets/") && entry.filename.count > 7 {
+                let assetName = String(entry.filename.dropFirst(7)) // drop "assets/"
+                assets[assetName] = entry.data
+            }
+        }
+
+        return MdairDocument(markdown: markdown, assets: assets)
+    }
+}
 
 // MARK: - Markdown Renderer
 
@@ -216,6 +369,22 @@ class PreviewViewController: NSViewController, QLPreviewingController, WKNavigat
     a { text-decoration: none; }
     a:hover { text-decoration: underline; }
     input[type=checkbox] { margin-right: 6px; }
+    .mdair-notice {
+      padding: 12px 16px; margin-bottom: 20px; border-radius: 8px;
+      border-left: 4px solid #f0a020; font-size: 13px; line-height: 1.5;
+    }
+    .mdair-notice code { padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+    #mdair-toast {
+      position: fixed; top: 16px; right: 16px;
+      padding: 6px 14px; border-radius: 6px;
+      font-size: 13px; font-weight: 500;
+      background: rgba(40,40,40,0.92); color: #fff;
+      opacity: 0; pointer-events: none;
+      transform: translateY(-8px);
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      z-index: 99999;
+    }
+    #mdair-toast.show { opacity: 1; transform: translateY(0); }
     @media (prefers-color-scheme: light) {
       body { color: #24292f; background: #fff; }
       h1, h2 { border-bottom-color: #d1d9e0; }
@@ -223,6 +392,8 @@ class PreviewViewController: NSViewController, QLPreviewingController, WKNavigat
       blockquote { border-left-color: #d1d9e0; color: #59636e; background: #f6f8fa; }
       th { background: #f6f8fa; } th, td { border-color: #d1d9e0; }
       hr { background: #d1d9e0; } a { color: #0969da; }
+      .mdair-notice { background: #fff8e1; color: #6b4f00; }
+      .mdair-notice code { background: rgba(0,0,0,0.06); }
     }
     @media (prefers-color-scheme: dark) {
       body { color: #e6edf3; background: #0d1117; }
@@ -231,6 +402,8 @@ class PreviewViewController: NSViewController, QLPreviewingController, WKNavigat
       blockquote { border-left-color: #30363d; color: #8b949e; background: #161b22; }
       th { background: #161b22; } th, td { border-color: #30363d; }
       hr { background: #30363d; } a { color: #58a6ff; }
+      .mdair-notice { background: #2a2410; color: #e0c97a; }
+      .mdair-notice code { background: rgba(255,255,255,0.08); }
     }
     """
 
@@ -253,18 +426,30 @@ class PreviewViewController: NSViewController, QLPreviewingController, WKNavigat
     }
 
     func preparePreviewOfFile(at url: URL) async throws {
+        if url.pathExtension.lowercased() == "mdair" {
+            try await prepareMdairPreview(at: url)
+        } else {
+            try await prepareMarkdownPreview(at: url)
+        }
+    }
+
+    private func prepareMarkdownPreview(at url: URL) async throws {
         let data = try Data(contentsOf: url)
         let markdown = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
         let renderer = MarkdownRenderer()
-        var body = renderer.render(markdown)
+        let rendered = renderer.render(markdown)
         let baseDir = url.deletingLastPathComponent()
-        body = inlineLocalImages(body, baseDir: baseDir)
+        let (body, missing) = inlineLocalImages(rendered, baseDir: baseDir)
+        let notice = missing > 0 ? """
+        <div class="mdair-notice"><strong>로컬 이미지를 표시할 수 없습니다.</strong><br>macOS QuickLook 미리보기는 보안 정책상 미리보기 파일 외 다른 파일에 접근할 수 없습니다. 이미지를 보려면 파일을 더블클릭하여 <strong>mdair</strong> 앱으로 열거나, <code>mdair-convert</code>로 <code>.mdair</code> 형식으로 변환하세요.</div>
+        """ : ""
         let html = """
         <!DOCTYPE html><html><head><meta charset='utf-8'>\
         <style>\(PreviewViewController.css)</style></head>\
-        <body>\(body)\
+        <body>\(notice)\(body)\
         <script src='https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'></script>\
         <script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>\
+        <script>(function(){var t=null,m=null;function s(){if(!t){t=document.createElement('div');t.id='mdair-toast';t.textContent='복사됨';document.body.appendChild(t);}t.classList.add('show');clearTimeout(m);m=setTimeout(function(){t.classList.remove('show');},1200);}document.addEventListener('copy',s);})();</script>\
         </body></html>
         """
         await withCheckedContinuation { continuation in
@@ -275,11 +460,78 @@ class PreviewViewController: NSViewController, QLPreviewingController, WKNavigat
         }
     }
 
-    private func inlineLocalImages(_ html: String, baseDir: URL) -> String {
+    private func prepareMdairPreview(at url: URL) async throws {
+        let parser = MdairParser()
+        let doc = try parser.parse(fileURL: url)
+
+        let renderer = MarkdownRenderer()
+        var body = renderer.render(doc.markdown)
+        body = inlineAssetsFromMemory(body, assets: doc.assets)
+
+        let html = """
+        <!DOCTYPE html><html><head><meta charset='utf-8'>\
+        <style>\(PreviewViewController.css)</style></head>\
+        <body>\(body)\
+        <script src='https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'></script>\
+        <script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>\
+        <script>(function(){var t=null,m=null;function s(){if(!t){t=document.createElement('div');t.id='mdair-toast';t.textContent='복사됨';document.body.appendChild(t);}t.classList.add('show');clearTimeout(m);m=setTimeout(function(){t.classList.remove('show');},1200);}document.addEventListener('copy',s);})();</script>\
+        </body></html>
+        """
+        await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                self.loadContinuation = continuation
+                self.webView.loadHTMLString(html, baseURL: nil)
+            }
+        }
+    }
+
+    private func inlineAssetsFromMemory(_ html: String, assets: [String: Data]) -> String {
         guard let regex = try? NSRegularExpression(
-            pattern: #"(src|srcset)=\"([^\"]+)\""#, options: []
+            pattern: #"(src|srcset)=\"assets/([^\"]+)\""#, options: []
         ) else { return html }
         var result = html
+        let matches = regex.matches(in: html, options: [], range: NSRange(html.startIndex..., in: html))
+        for match in matches.reversed() {
+            guard let attrRange = Range(match.range(at: 1), in: result),
+                  let filenameRange = Range(match.range(at: 2), in: result) else { continue }
+            let attr = String(result[attrRange])
+            let filename = String(result[filenameRange])
+
+            guard let imgData = assets[filename] else {
+                // Replace with placeholder for missing images
+                let fullRange = match.range(at: 0)
+                guard let swiftRange = Range(fullRange, in: result) else { continue }
+                result.replaceSubrange(swiftRange, with: "\(attr)=\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iNTAiPjx0ZXh0IHg9IjEwIiB5PSIzMCIgZmlsbD0iIzk5OSI+SW1hZ2Ugbm90IGZvdW5kPC90ZXh0Pjwvc3ZnPg==\"")
+                continue
+            }
+
+            let ext = (filename as NSString).pathExtension.lowercased()
+            let mime: String
+            switch ext {
+            case "png": mime = "image/png"
+            case "jpg", "jpeg": mime = "image/jpeg"
+            case "gif": mime = "image/gif"
+            case "svg": mime = "image/svg+xml"
+            case "webp": mime = "image/webp"
+            case "tiff", "tif": mime = "image/tiff"
+            default: mime = "image/png"
+            }
+
+            let b64 = imgData.base64EncodedString()
+            let dataURI = "data:\(mime);base64,\(b64)"
+            let fullRange = match.range(at: 0)
+            guard let swiftRange = Range(fullRange, in: result) else { continue }
+            result.replaceSubrange(swiftRange, with: "\(attr)=\"\(dataURI)\"")
+        }
+        return result
+    }
+
+    private func inlineLocalImages(_ html: String, baseDir: URL) -> (html: String, missingCount: Int) {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(src|srcset)=\"([^\"]+)\""#, options: []
+        ) else { return (html, 0) }
+        var result = html
+        var missingCount = 0
         let matches = regex.matches(in: html, options: [], range: NSRange(html.startIndex..., in: html))
         for match in matches.reversed() {
             guard let attrRange = Range(match.range(at: 1), in: html),
@@ -288,7 +540,10 @@ class PreviewViewController: NSViewController, QLPreviewingController, WKNavigat
             let path = String(html[pathRange])
             if path.hasPrefix("http://") || path.hasPrefix("https://") || path.hasPrefix("data:") { continue }
             let fileURL = baseDir.appendingPathComponent(path)
-            guard let imgData = try? Data(contentsOf: fileURL) else { continue }
+            guard let imgData = try? Data(contentsOf: fileURL) else {
+                missingCount += 1
+                continue
+            }
             let ext = fileURL.pathExtension.lowercased()
             let mime = ext == "png" ? "image/png" : ext == "jpg" || ext == "jpeg" ? "image/jpeg" : ext == "gif" ? "image/gif" : ext == "svg" ? "image/svg+xml" : "image/png"
             let b64 = imgData.base64EncodedString()
@@ -297,6 +552,6 @@ class PreviewViewController: NSViewController, QLPreviewingController, WKNavigat
             guard let swiftRange = Range(fullRange, in: result) else { continue }
             result.replaceSubrange(swiftRange, with: "\(attr)=\"\(dataURI)\"")
         }
-        return result
+        return (result, missingCount)
     }
 }

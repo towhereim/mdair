@@ -42,12 +42,30 @@
 | **Zero Dependencies** | Pure native macOS — no Electron, no Node.js, no frameworks |
 | **Tiny Footprint** | Under 200KB installed |
 | **Zoom** | Zoom in/out with `⌘+`/`⌘-` or trackpad pinch gestures |
+| **Copy** | Select text and `⌘C` to copy — a toast confirms the action |
+| **Edit Menu** | Standard Cut/Copy/Paste/Undo/Redo shortcuts |
+| **Export** | Export to `.mdair` or PDF from the File menu |
+| **Image Inlining** | Local images embedded as data URIs when opened with mdair.app |
 
 ### Zoom In / Out
 
 <p align="center">
   <img src="docs/assets/mdair-zoom.gif" alt="Zoom in/out demo" width="700">
 </p>
+
+### Copy with Toast Feedback
+
+<p align="center">
+  <img src="images/copy_function.jpg" alt="Copy text with cmd+C" width="700">
+</p>
+
+Select any text in a preview window and press `⌘C` to copy. A subtle toast appears in the top-right corner to confirm the copy action.
+
+### Export to .mdair or PDF
+
+Open **File** → **Export as .mdair…** to bundle the current Markdown document together with all referenced images into a single `.mdair` archive.
+
+Open **File** → **Export as PDF…** to render the current view as a PDF using WebKit's native PDF engine — preserves dark/light theme and zoom level.
 
 ## Installation
 
