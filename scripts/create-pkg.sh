@@ -5,7 +5,7 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 DIST_DIR="$PROJECT_ROOT/dist"
 PKG_ID="com.mdair.app"
-VERSION="1.2.0"
+VERSION="1.2.1"
 
 echo "=== mdair PKG Installer Creation ==="
 

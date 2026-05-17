@@ -319,8 +319,8 @@ NSString *getCSS(void) {
     "  a { color: #58a6ff; }"
     "}"
 
-    // Print / PDF export — A4 paper, readable colors, no awkward page breaks
-    "@page { size: A4; margin: 0; }"
+    // Print / PDF export — A4 paper with proper margins, readable colors, no awkward breaks
+    "@page { size: A4; margin: 18mm 16mm; }"
     "@media print {"
     "  :root { color-scheme: light; }"
     "  html, body {"

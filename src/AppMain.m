@@ -407,11 +407,12 @@ extern NSString *getCSS(void);
     [info setPaperSize:NSMakeSize(595.276, 841.890)];
     [info setPaperName:@"iso-a4"];
     [info setOrientation:NSPaperOrientationPortrait];
-    // ~13mm margins
-    [info setLeftMargin:36.0];
-    [info setRightMargin:36.0];
-    [info setTopMargin:36.0];
-    [info setBottomMargin:36.0];
+    // CSS @page handles the printable margins (18mm/16mm) — keep NSPrintInfo at 0
+    // so they don't stack on top of the CSS margins.
+    [info setLeftMargin:0.0];
+    [info setRightMargin:0.0];
+    [info setTopMargin:0.0];
+    [info setBottomMargin:0.0];
     [info setHorizontalPagination:NSPrintingPaginationModeFit];
     [info setVerticalPagination:NSPrintingPaginationModeAutomatic];
     [info setHorizontallyCentered:NO];
