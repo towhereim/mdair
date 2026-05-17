@@ -17,6 +17,8 @@ extern NSString *getCSS(void);
 - (NSString *)inlineLocalImagesInHTML:(NSString *)html baseDir:(NSString *)baseDir;
 - (IBAction)exportAsMdair:(id)sender;
 - (IBAction)exportAsPDF:(id)sender;
+- (IBAction)printDocument:(id)sender;
++ (NSPrintInfo *)a4PrintInfo;
 @end
 
 @implementation MdairAppDelegate
@@ -399,6 +401,24 @@ extern NSString *getCSS(void);
     }
 }
 
++ (NSPrintInfo *)a4PrintInfo {
+    NSPrintInfo *info = [[NSPrintInfo alloc] init];
+    // A4 = 210 × 297 mm = 595.276 × 841.890 pt at 72dpi
+    [info setPaperSize:NSMakeSize(595.276, 841.890)];
+    [info setPaperName:@"iso-a4"];
+    [info setOrientation:NSPaperOrientationPortrait];
+    // ~13mm margins
+    [info setLeftMargin:36.0];
+    [info setRightMargin:36.0];
+    [info setTopMargin:36.0];
+    [info setBottomMargin:36.0];
+    [info setHorizontalPagination:NSPrintingPaginationModeFit];
+    [info setVerticalPagination:NSPrintingPaginationModeAutomatic];
+    [info setHorizontallyCentered:NO];
+    [info setVerticallyCentered:NO];
+    return info;
+}
+
 - (IBAction)exportAsPDF:(id)sender {
     WKWebView *webView = [self activeWebView];
     if (!webView) {
@@ -422,31 +442,84 @@ extern NSString *getCSS(void);
     if ([panel runModal] != NSModalResponseOK) return;
     NSURL *dstURL = [panel URL];
 
-    if (@available(macOS 11.0, *)) {
-        WKPDFConfiguration *config = [[WKPDFConfiguration alloc] init];
-        [webView createPDFWithConfiguration:config completionHandler:^(NSData * _Nullable data, NSError * _Nullable error) {
-            if (data) {
-                NSError *writeErr = nil;
-                if ([data writeToURL:dstURL options:NSDataWritingAtomic error:&writeErr]) {
-                    [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[dstURL]];
-                } else {
-                    NSAlert *alert = [[NSAlert alloc] init];
-                    alert.messageText = @"PDF 저장 실패";
-                    alert.informativeText = writeErr.localizedDescription ?: @"unknown";
-                    [alert runModal];
-                }
-            } else {
-                NSAlert *alert = [[NSAlert alloc] init];
-                alert.messageText = @"PDF 생성 실패";
-                alert.informativeText = error.localizedDescription ?: @"unknown";
-                [alert runModal];
-            }
-        }];
-    } else {
+    NSPrintInfo *base = [MdairAppDelegate a4PrintInfo];
+    NSMutableDictionary *dict = [[base dictionary] mutableCopy];
+    dict[NSPrintJobDisposition] = NSPrintSaveJob;
+    dict[NSPrintJobSavingURL] = dstURL;
+    NSPrintInfo *info = [[NSPrintInfo alloc] initWithDictionary:dict];
+    [info setPaperSize:[base paperSize]];
+    [info setOrientation:[base orientation]];
+    [info setLeftMargin:[base leftMargin]];
+    [info setRightMargin:[base rightMargin]];
+    [info setTopMargin:[base topMargin]];
+    [info setBottomMargin:[base bottomMargin]];
+    [info setHorizontalPagination:[base horizontalPagination]];
+    [info setVerticalPagination:[base verticalPagination]];
+    [info setHorizontallyCentered:NO];
+    [info setVerticallyCentered:NO];
+
+    NSPrintOperation *op = [webView printOperationWithPrintInfo:info];
+    if (!op) {
         NSAlert *alert = [[NSAlert alloc] init];
-        alert.messageText = @"macOS 11 이상이 필요합니다";
+        alert.messageText = @"PDF 생성 실패";
+        alert.informativeText = @"인쇄 작업을 생성할 수 없습니다.";
+        [alert runModal];
+        return;
+    }
+    op.showsPrintPanel = NO;
+    op.showsProgressPanel = YES;
+    op.jobTitle = [defaultName stringByDeletingPathExtension];
+
+    [op runOperationModalForWindow:window
+                          delegate:self
+                    didRunSelector:@selector(pdfExportDidEnd:success:contextInfo:)
+                       contextInfo:(__bridge_retained void *)dstURL];
+}
+
+- (void)pdfExportDidEnd:(NSPrintOperation *)op success:(BOOL)success contextInfo:(void *)contextInfo {
+    NSURL *dstURL = (__bridge_transfer NSURL *)contextInfo;
+    if (success && dstURL) {
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[dstURL]];
+    } else if (!success) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"PDF 저장 실패";
+        alert.informativeText = @"인쇄 작업이 실패했습니다.";
         [alert runModal];
     }
+}
+
+- (IBAction)printDocument:(id)sender {
+    WKWebView *webView = [self activeWebView];
+    if (!webView) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"인쇄할 문서가 없습니다";
+        [alert runModal];
+        return;
+    }
+
+    NSWindow *window = [NSApp keyWindow];
+    NSPrintInfo *info = [MdairAppDelegate a4PrintInfo];
+
+    NSPrintOperation *op = [webView printOperationWithPrintInfo:info];
+    if (!op) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"인쇄 실패";
+        alert.informativeText = @"인쇄 작업을 생성할 수 없습니다.";
+        [alert runModal];
+        return;
+    }
+    op.showsPrintPanel = YES;
+    op.showsProgressPanel = YES;
+
+    NSURL *src = [window representedURL];
+    if (src) {
+        op.jobTitle = [[src path] lastPathComponent];
+    }
+
+    [op runOperationModalForWindow:window
+                          delegate:nil
+                    didRunSelector:NULL
+                       contextInfo:NULL];
 }
 
 @end
@@ -476,6 +549,8 @@ int main(int argc, const char *argv[]) {
         [fileMenu addItem:[NSMenuItem separatorItem]];
         [fileMenu addItemWithTitle:@"Export as .mdair…" action:@selector(exportAsMdair:) keyEquivalent:@""];
         [fileMenu addItemWithTitle:@"Export as PDF…" action:@selector(exportAsPDF:) keyEquivalent:@""];
+        [fileMenu addItem:[NSMenuItem separatorItem]];
+        [fileMenu addItemWithTitle:@"Print…" action:@selector(printDocument:) keyEquivalent:@"p"];
         [fileMenuItem setSubmenu:fileMenu];
 
         NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
