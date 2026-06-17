@@ -8,12 +8,15 @@ extern NSString *getCSS(void);
 // ---------------------------------------------------------------------------
 // App Delegate
 // ---------------------------------------------------------------------------
-@interface MdairAppDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate>
+@interface MdairAppDelegate : NSObject <NSApplicationDelegate, WKNavigationDelegate, NSWindowDelegate>
 @property (strong) NSMutableArray<NSWindow *> *windows;
 - (IBAction)zoomIn:(id)sender;
 - (IBAction)zoomOut:(id)sender;
 - (IBAction)actualSize:(id)sender;
-- (void)openMarkdownString:(NSString *)markdown withTitle:(NSString *)title baseDir:(NSString *)baseDir;
+- (NSWindow *)openMarkdownString:(NSString *)markdown withTitle:(NSString *)title baseDir:(NSString *)baseDir;
+- (NSWindow *)openMarkdownString:(NSString *)markdown withTitle:(NSString *)title baseDir:(NSString *)baseDir isDocument:(BOOL)isDocument;
+- (void)presentDocumentWindow:(NSWindow *)window isDocument:(BOOL)isDocument;
+- (void)syncTabTitleForWindow:(NSWindow *)window;
 - (NSString *)inlineLocalImagesInHTML:(NSString *)html baseDir:(NSString *)baseDir;
 - (IBAction)exportAsMdair:(id)sender;
 - (IBAction)exportAsPDF:(id)sender;
@@ -52,7 +55,24 @@ extern NSString *getCSS(void);
     [sender replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
 }
 
+// Close the welcome/placeholder window (no representedURL, mdair.welcome
+// identifier) when the first real document is about to open, matching the
+// macOS convention (Safari/TextEdit) where a start window is replaced by the
+// first document rather than left dangling. windowWillClose: prunes it from
+// self.windows. Real document windows always have a representedURL so they are
+// never affected.
+- (void)dismissWelcomeWindowIfPresent {
+    NSArray<NSWindow *> *snapshot = [self.windows copy];
+    for (NSWindow *w in snapshot) {
+        if ([w.tabbingIdentifier isEqualToString:@"mdair.welcome"] &&
+            [w representedURL] == nil) {
+            [w close];
+        }
+    }
+}
+
 - (void)openMarkdownFile:(NSString *)path {
+    [self dismissWelcomeWindowIfPresent];
     if ([[path pathExtension] caseInsensitiveCompare:@"mdair"] == NSOrderedSame) {
         [self openMdairFile:path];
         return;
@@ -74,9 +94,11 @@ extern NSString *getCSS(void);
 
     NSString *title = [path lastPathComponent];
     NSString *baseDir = [path stringByDeletingLastPathComponent];
-    [self openMarkdownString:markdown withTitle:title baseDir:baseDir];
-    NSWindow *createdWindow = [self.windows lastObject];
+    NSWindow *createdWindow = [self openMarkdownString:markdown withTitle:title baseDir:baseDir];
     [createdWindow setRepresentedURL:[NSURL fileURLWithPath:path]];
+    // representedURL is set AFTER presentDocumentWindow: ran (inside
+    // openMarkdownString:), so re-sync the tab title from the filename now.
+    [self syncTabTitleForWindow:createdWindow];
 }
 
 - (void)openMdairFile:(NSString *)path {
@@ -153,6 +175,11 @@ extern NSString *getCSS(void);
                                                      backing:NSBackingStoreBuffered
                                                        defer:NO];
     [window setTitle:title];
+    [window setDelegate:self];
+    // self.windows holds the strong (ARC) reference; NSWindow's default
+    // releasedWhenClosed=YES would add a second release on close, over-releasing
+    // the window and crashing (SIGSEGV in objc_release) when a tab is closed.
+    [window setReleasedWhenClosed:NO];
     [window center];
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
@@ -162,9 +189,9 @@ extern NSString *getCSS(void);
     [webView loadHTMLString:html baseURL:[NSURL fileURLWithPath:tempDir]];
     [window setContentView:webView];
     [window setRepresentedURL:[NSURL fileURLWithPath:path]];
-    [window makeKeyAndOrderFront:nil];
 
     [self.windows addObject:window];
+    [self presentDocumentWindow:window isDocument:YES];
 
     // Clean up temp directory after a delay to allow WebView to load
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
@@ -213,10 +240,18 @@ extern NSString *getCSS(void);
 }
 
 - (void)openMarkdownString:(NSString *)markdown withTitle:(NSString *)title {
-    [self openMarkdownString:markdown withTitle:title baseDir:nil];
+    // The 2-arg variant is used only for the welcome/placeholder window, which
+    // never has a representedURL. Mark it as a non-document so it is excluded
+    // from the document tab group (distinct tabbingIdentifier + disallowed).
+    [self openMarkdownString:markdown withTitle:title baseDir:nil isDocument:NO];
 }
 
-- (void)openMarkdownString:(NSString *)markdown withTitle:(NSString *)title baseDir:(NSString *)baseDir {
+- (NSWindow *)openMarkdownString:(NSString *)markdown withTitle:(NSString *)title baseDir:(NSString *)baseDir {
+    // Default: a real document (joins the tab group).
+    return [self openMarkdownString:markdown withTitle:title baseDir:baseDir isDocument:YES];
+}
+
+- (NSWindow *)openMarkdownString:(NSString *)markdown withTitle:(NSString *)title baseDir:(NSString *)baseDir isDocument:(BOOL)isDocument {
     NSString *body = markdownToHTML(markdown);
     if (baseDir) {
         body = [self inlineLocalImagesInHTML:body baseDir:baseDir];
@@ -238,6 +273,11 @@ extern NSString *getCSS(void);
                                                      backing:NSBackingStoreBuffered
                                                        defer:NO];
     [window setTitle:title];
+    [window setDelegate:self];
+    // self.windows holds the strong (ARC) reference; NSWindow's default
+    // releasedWhenClosed=YES would add a second release on close, over-releasing
+    // the window and crashing (SIGSEGV in objc_release) when a tab is closed.
+    [window setReleasedWhenClosed:NO];
     [window center];
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
@@ -247,9 +287,74 @@ extern NSString *getCSS(void);
     NSURL *baseURL = baseDir ? [NSURL fileURLWithPath:baseDir] : nil;
     [webView loadHTMLString:html baseURL:baseURL];
     [window setContentView:webView];
-    [window makeKeyAndOrderFront:nil];
 
     [self.windows addObject:window];
+    [self presentDocumentWindow:window isDocument:isDocument];
+    return window;
+}
+
+// Show a document window. Under macOS native tabs, if a same-identifier host
+// window is already open, attach as a tab; otherwise present standalone.
+// MUST be called after [self.windows addObject:window] so lastObject is valid.
+- (void)presentDocumentWindow:(NSWindow *)window isDocument:(BOOL)isDocument {
+    static NSString *const kTabbingIdentifier = @"mdair.document";
+
+    // The welcome/placeholder window (isDocument == NO) has no representedURL
+    // and must never co-mingle with real document tabs. Give it a distinct
+    // tabbing identifier and disallow tabbing so it stays a standalone window
+    // and is never picked as a tab host by a real document below.
+    if (!isDocument) {
+        window.tabbingIdentifier = @"mdair.welcome";
+        window.tabbingMode = NSWindowTabbingModeDisallowed;
+        [window makeKeyAndOrderFront:nil];
+        [self syncTabTitleForWindow:window];
+        return;
+    }
+
+    // Tabbing attributes must be set BEFORE the window is shown.
+    window.tabbingIdentifier = kTabbingIdentifier;
+    window.tabbingMode = NSWindowTabbingModePreferred;
+
+    // Prefer the current keyWindow as host; otherwise the most-recently
+    // added OTHER document window (window itself is already in self.windows).
+    // Only a still-visible window with the document tabbing identifier is a
+    // valid host — this skips closed/stale windows and the welcome window.
+    NSWindow *host = [NSApp keyWindow];
+    if (!host || host == window ||
+        ![host.tabbingIdentifier isEqualToString:kTabbingIdentifier]) {
+        host = nil;
+        for (NSWindow *w in [self.windows reverseObjectEnumerator]) {
+            if (w != window && w.isVisible &&
+                [w.tabbingIdentifier isEqualToString:kTabbingIdentifier]) {
+                host = w;
+                break;
+            }
+        }
+    }
+    if (host && host != window &&
+        [host.tabbingIdentifier isEqualToString:kTabbingIdentifier]) {
+        [host addTabbedWindow:window ordered:NSWindowAbove];
+        [window makeKeyAndOrderFront:nil];
+    } else {
+        [window makeKeyAndOrderFront:nil];
+    }
+    [self syncTabTitleForWindow:window];
+}
+
+// Synchronize a window's tab title with its document filename. Under macOS
+// native tabs each tab IS its own NSWindow, so the tab label is window.title.
+// The document filename (representedURL.lastPathComponent) is the single source
+// of truth: when a representedURL is present the title is forced to match it,
+// so the tab label always reflects the document — regardless of which creation
+// path (.md sets representedURL after present; .mdair sets it before) ran.
+// Windows without a representedURL (e.g. the welcome window) keep their title.
+- (void)syncTabTitleForWindow:(NSWindow *)window {
+    if (!window) return;
+    NSURL *url = [window representedURL];
+    NSString *filename = [[url path] lastPathComponent];
+    if (filename.length > 0 && ![window.title isEqualToString:filename]) {
+        [window setTitle:filename];
+    }
 }
 
 - (NSString *)inlineLocalImagesInHTML:(NSString *)html baseDir:(NSString *)baseDir {
@@ -335,6 +440,17 @@ extern NSString *getCSS(void);
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
     return YES;
+}
+
+// Prune closed windows from self.windows so the array never retains dead
+// windows. Without this, the host-pick fallback in presentDocumentWindow:
+// could attach a new tab to a closed window, and the welcome-count check in
+// applicationDidFinishLaunching: would count phantom windows.
+- (void)windowWillClose:(NSNotification *)notification {
+    NSWindow *window = notification.object;
+    if (window) {
+        [self.windows removeObject:window];
+    }
 }
 
 - (IBAction)exportAsMdair:(id)sender {
@@ -575,6 +691,30 @@ int main(int argc, const char *argv[]) {
         [viewMenu addItemWithTitle:@"Zoom Out" action:@selector(zoomOut:) keyEquivalent:@"-"];
         [viewMenu addItemWithTitle:@"Actual Size" action:@selector(actualSize:) keyEquivalent:@"0"];
         [viewMenuItem setSubmenu:viewMenu];
+
+        // Window menu — enables native tab management. AppKit auto-injects
+        // "Show/Hide Tab Bar" and standard tab affordances via setWindowsMenu:.
+        NSMenuItem *windowMenuItem = [[NSMenuItem alloc] init];
+        [menuBar addItem:windowMenuItem];
+        NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+        // Standard window controls (⌘M Minimize, Zoom). performMiniaturize:/
+        // performZoom: are AppKit-provided NSWindow actions routed via the
+        // responder chain to the active tab's window (keyWindow).
+        [windowMenu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
+        [windowMenu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
+        [windowMenu addItem:[NSMenuItem separatorItem]];
+        NSMenuItem *prevTab = [windowMenu addItemWithTitle:@"Show Previous Tab" action:@selector(selectPreviousTab:) keyEquivalent:@"["];
+        [prevTab setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+        NSMenuItem *nextTab = [windowMenu addItemWithTitle:@"Show Next Tab" action:@selector(selectNextTab:) keyEquivalent:@"]"];
+        [nextTab setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+        [windowMenu addItemWithTitle:@"Show All Tabs" action:@selector(toggleTabOverview:) keyEquivalent:@""];
+        [windowMenu addItem:[NSMenuItem separatorItem]];
+        [windowMenu addItemWithTitle:@"Move Tab to New Window" action:@selector(moveTabToNewWindow:) keyEquivalent:@""];
+        [windowMenu addItemWithTitle:@"Merge All Windows" action:@selector(mergeAllWindows:) keyEquivalent:@""];
+        [windowMenu addItem:[NSMenuItem separatorItem]];
+        [windowMenu addItemWithTitle:@"Bring All to Front" action:@selector(arrangeInFront:) keyEquivalent:@""];
+        [windowMenuItem setSubmenu:windowMenu];
+        [app setWindowsMenu:windowMenu];
 
         [app setMainMenu:menuBar];
 
