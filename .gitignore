@@ -6,3 +6,9 @@ dist/
 *.swp
 *.swo
 *~
+
+# Secrets — never commit
+.env
+.env.*
+.secrets
+.secrets/

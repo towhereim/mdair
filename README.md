@@ -37,6 +37,7 @@
 |---------|-------------|
 | **QuickLook Integration** | Press `Space` in Finder to preview `.md` files instantly |
 | **Standalone Viewer** | Double-click or drag `.md` files to open in a dedicated window |
+| **Window Tabs** | Open multiple documents as native macOS tabs in a single window |
 | **Dark Mode** | Automatic light/dark theme matching your system preference |
 | **Rich Markdown** | Headings, lists, tables, code blocks, blockquotes, checkboxes, images, links |
 | **Zero Dependencies** | Pure native macOS — no Electron, no Node.js, no frameworks |
@@ -46,6 +47,14 @@
 | **Edit Menu** | Standard Cut/Copy/Paste/Undo/Redo shortcuts |
 | **Export** | Export to `.mdair` or PDF from the File menu |
 | **Image Inlining** | Local images embedded as data URIs when opened with mdair.app |
+
+### Window Tabs
+
+<p align="center">
+  <img src="docs/assets/mdair-tabs.png" alt="Multiple documents open as window tabs" width="700">
+</p>
+
+Open several documents at once and they group into a single window as native macOS tabs. Switch with `⌘⇧[` / `⌘⇧]`, and use the **Window** menu to *Merge All Windows* or *Move Tab to New Window*. `⌘W` closes just the active tab.
 
 ### Zoom In / Out
 
